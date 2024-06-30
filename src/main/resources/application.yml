@@ -1,0 +1,6 @@
+spring:
+    application:
+        name: LhtMq
+
+server:
+    port: 8765
