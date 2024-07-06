@@ -2,7 +2,9 @@ package com.lht.lhtmq.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -14,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Data
 @AllArgsConstructor
+@NoArgsConstructor
 public class LhtMessage<T> {
 
     static AtomicLong idGen = new AtomicLong(0);
@@ -21,16 +24,15 @@ public class LhtMessage<T> {
 //    private String topic;
     private long id;
     private T body;
-    private Map<String, String> headers;//系统属性
+    private Map<String, String> headers = new HashMap<>();//系统属性
     private Map<String, String> properties;//业务属性
 
-
-    public static long getID() {
+    public static long getIDs() {
         return idGen.getAndIncrement();
     }
 
     public static LhtMessage create(String body, Map<String, String> headers) {
-        return new LhtMessage(getID(), body, headers, null);
+        return new LhtMessage(getIDs(), body, headers, null);
     }
 
 }

@@ -1,19 +1,20 @@
 package com.lht.lhtmq.client;
 
 import com.lht.lhtmq.model.LhtMessage;
+import lombok.Data;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author Leo
  * @date 2024/06/26
  */
+@Data
 public class LhtConsumer<T> {
 
     private String id;
     LhtBroker broker;
-    String topic;
-    LhtMq mq;
 
     static AtomicInteger idGen = new AtomicInteger(0);
 
@@ -23,19 +24,33 @@ public class LhtConsumer<T> {
     }
 
     public void subscribe(String topic){
-        this.topic = topic;
-        mq = broker.find(topic);
-        if(mq==null) throw new RuntimeException("topic not found");
+        broker.sub(topic, id);
     }
-    public LhtMessage<T> poll(long timeout){
-        return mq.poll(timeout);
+    public void unsubscribe(String topic){
+        broker.unsub(topic, id);
     }
-
-    public void listener(LhtListener listener){
-        mq.addListener(listener);
+    public LhtMessage<T> recv(String topic){
+        return broker.recv(topic, id);
     }
 
+    public List<LhtMessage<String>> batch(String topic, int size) {
+        return broker.batch(topic, id, size);
+    }
 
+    public boolean ack(String topic, int offset) {
+        return broker.ack(topic, id, offset);
+    }
+    public boolean ack(String topic, LhtMessage<?> message) {
+        int offset = Integer.parseInt(message.getHeaders().get("X-offset"));
+        return ack(topic, offset);
+    }
+
+    public void listener(String topic, LhtListener listener) {
+        this.listener = listener;
+        broker.addConsumer(topic, this);
+    }
+
+    private LhtListener listener;
 
 
 }

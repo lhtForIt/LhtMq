@@ -15,9 +15,7 @@ public class LhtProducer {
     LhtBroker broker;
 
     public boolean send(String topic, LhtMessage lhtMessage) {
-        LhtMq mq = broker.find(topic);
-        if(mq==null) throw new RuntimeException("topic not found");
-        return mq.send(lhtMessage);
+        return broker.send(topic, lhtMessage);
     }
 
 }
