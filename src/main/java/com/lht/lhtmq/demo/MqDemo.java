@@ -23,23 +23,23 @@ public class MqDemo {
 //        broker.createTopic(topic);
 
         LhtProducer producer = broker.createProducer();
+//
+//        LhtConsumer<?> consumer = broker.createConsumer(topic);
+//        consumer.listener(topic, (message) -> System.out.println("onMessage==> " + message));
 
-        LhtConsumer<?> consumer = broker.createConsumer(topic);
-        consumer.listener(topic, (message) -> System.out.println("onMessage==> " + message));
+        LhtConsumer<?> consumer1 = broker.createConsumer(topic);
 
-//        LhtConsumer<?> consumer1 = broker.createConsumer(topic);
-
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < 10; i++) {
             Order order = new Order(ids, "items" + ids, ids * 100);
             ids++;
             producer.send(topic, LhtMessage.create(JSON.toJSONString(order), new HashMap<>()));
         }
 
-//        for (int i = 0; i < 10; i++) {
-//            LhtMessage<String> message = (LhtMessage<String>) consumer1.recv(topic);
-//            System.out.println(message);//做业务处理
-//            consumer1.ack(topic, message);
-//        }
+        for (int i = 0; i < 10; i++) {
+            LhtMessage<String> message = (LhtMessage<String>) consumer1.recv(topic);
+            System.out.println(message);//做业务处理
+            consumer1.ack(topic, message);
+        }
 
 
 //        while (true) {

@@ -1,7 +1,11 @@
 package com.lht.lhtmq.server;
 
 import com.lht.lhtmq.model.LhtMessage;
+import com.lht.lhtmq.store.Indexer;
+import com.lht.lhtmq.store.MessageStore;
+import lombok.SneakyThrows;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -19,45 +23,32 @@ public class MessageQueue {
 
     static {
         queues.put(TEST_TOPIC, new MessageQueue(TEST_TOPIC));
-        queues.put("a", new MessageQueue("a"));
+//        queues.put("a", new MessageQueue("a"));
     }
 
     private Map<String, MessageSubscription> subscriptions = new HashMap<>();
 
     private String topic;
-    private LhtMessage<?>[] queue = new LhtMessage[10 * 1024];
+//    private LhtMessage<?>[] queue = new LhtMessage[10 * 1024];
 
-    //当前消息下标
-    private int index = 0;
+    private MessageStore store = null;
 
-    public MessageQueue(String topic) {
+    public MessageQueue(String topic){
         this.topic = topic;
+        this.store= new MessageStore(topic);
+        store.init();
     }
 
-    public int send(LhtMessage<?> message) {
-        if (index >= queue.length) {
-            return -1;
-        }
-        message.getHeaders().put("X-offset", String.valueOf(index));//记录偏移量
-        queue[index++] = message;
-        return index;
+    public int send(LhtMessage<String> message) {
+        int offset = store.pos();
+        message.getHeaders().put("X-offset", String.valueOf(offset));//记录偏移量
+        store.write(message);
+        return offset;
     }
 
-    public LhtMessage<?> recv(int current) {
-        if (current <= index) return queue[current];
-        return null;
+    public LhtMessage<?> recv(int offset) {
+        return store.read(offset);
     }
-
-    public List<LhtMessage<?>> batch(int current, int size) {
-        List<LhtMessage<?>> list = new ArrayList<>();
-        if (current + size <= index || current <= index) {
-            for (int i = current; i <= current + size; i++) {
-                list.add(queue[i]);
-            }
-        }
-        return list;
-    }
-
 
     public void subscribe(MessageSubscription subscription) {
         String consumerId = subscription.getConsumerId();
@@ -95,9 +86,14 @@ public class MessageQueue {
         MessageQueue messageQueue = queues.get(topic);
         if (messageQueue==null) throw new RuntimeException("topic not found");
         if (messageQueue.subscriptions.containsKey(consumerId)) {
-            int ind = messageQueue.subscriptions.get(consumerId).getOffset();
-            LhtMessage<?> recv = messageQueue.recv(ind + 1);
-            System.out.println(" ======>> recv: topic/cid/ind = " + topic + "/" + consumerId + "/" + ind);
+            int offset = messageQueue.subscriptions.get(consumerId).getOffset();
+            int next_offset = 0;
+            if (offset > -1) {
+                Indexer.Entry entry = Indexer.getEntry(topic, offset);
+                next_offset = offset + entry.getLength();
+            }
+            LhtMessage<?> recv = messageQueue.recv(next_offset);
+            System.out.println(" ======>> recv: topic/cid/ind = " + topic + "/" + consumerId + "/" + next_offset);
             System.out.println(" ======>> message: " + recv);
             return recv;
         }
@@ -108,20 +104,33 @@ public class MessageQueue {
         MessageQueue messageQueue = queues.get(topic);
         if (messageQueue==null) throw new RuntimeException("topic not found");
         if (messageQueue.subscriptions.containsKey(consumerId)) {
-            int ind = messageQueue.subscriptions.get(consumerId).getOffset();
-            List<LhtMessage<?>> recvs = messageQueue.batch(ind, size);
-            System.out.println(" ======>> recv: topic/cid/size = " + topic + "/" + consumerId + "/" + recvs.size());
-            System.out.println(" ======>> message: " + recvs);
-            return recvs;
+            int offset = messageQueue.subscriptions.get(consumerId).getOffset();
+            int next_offset = 0;
+            if (offset > -1) {
+                Indexer.Entry entry = Indexer.getEntry(topic, offset);
+                next_offset = offset + entry.getLength();
+            }
+            List<LhtMessage<?>> result = new ArrayList<>();
+            LhtMessage<?> recv = messageQueue.recv(next_offset);
+            while (recv != null) {
+                result.add(recv);
+                if (next_offset>size) break;
+                Indexer.Entry entry = Indexer.getEntry(topic, offset);
+                next_offset = offset + entry.getLength();
+                recv=messageQueue.recv(next_offset);
+            }
+            System.out.println(" ======>> recv: topic/cid/size = " + topic + "/" + consumerId + "/" + result.size());
+            System.out.println(" ======>> message: " + recv);
+            return result;
         }
         throw new RuntimeException("subscriptions not found for topic/consumerId = " + topic + "/" + consumerId);
     }
 
-    public static LhtMessage<?> recv(String topic, String consumerId, int ind) {
+    public static LhtMessage<?> recv(String topic, String consumerId, int offset) {
         MessageQueue messageQueue = queues.get(topic);
         if (messageQueue == null) throw new RuntimeException("topic not found");
         if (messageQueue.subscriptions.containsKey(consumerId)) {
-            return messageQueue.recv(ind + 1);
+            return messageQueue.recv(offset + 1);
         }
         throw new RuntimeException("subscriptions not found for topic/consumerId = " + topic + "/" + consumerId);
     }
@@ -132,7 +141,7 @@ public class MessageQueue {
         if (messageQueue.subscriptions.containsKey(consumerId)) {
             MessageSubscription messageSubscription = messageQueue.subscriptions.get(consumerId);
             //大于当前offset，并且小于等于当前消息下标才有效
-            if (offset > messageSubscription.getOffset() && offset <= messageQueue.index) {
+            if (offset > messageSubscription.getOffset() && offset < MessageStore.LEN) {
                 System.out.println(" ======>> ack: topic/cid/offset = " + topic + "/" + consumerId + "/" + offset);
                 messageSubscription.setOffset(offset);
                 return offset;
